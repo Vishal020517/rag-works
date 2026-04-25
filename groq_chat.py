@@ -8,7 +8,7 @@ load_dotenv()
 
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = "https://rag-works.onrender.com"
 
 chat_history = [
     {"role": "system", "content": "You are a helpful financial assistant."}
