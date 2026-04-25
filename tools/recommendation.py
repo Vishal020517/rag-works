@@ -21,7 +21,7 @@ def explain_recommendation(valuation, risk, recommendation):
         """
 
         response = client.chat.completions.create(
-            model="openai/gpt-oss-120b",  # fast + good enough
+            model="llama-3.1-8b-instant",  # fast + good enough
             messages=[
                 {"role": "system", "content": "You are a financial analyst."},
                 {"role": "user", "content": prompt}

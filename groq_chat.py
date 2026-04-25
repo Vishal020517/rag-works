@@ -1,15 +1,14 @@
 from groq import Groq
-import requests
-import yfinance as yf
+from agents.orchestrator import run_dynamic_agent
 from dotenv import load_dotenv
 import os
+import requests
 
 load_dotenv()
 
-# 🔑 API key
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-BASE_URL = "https://rag-works.onrender.com"
+BASE_URL = "http://localhost:8000"
 
 chat_history = [
     {"role": "system", "content": "You are a helpful financial assistant."}
@@ -19,42 +18,42 @@ last_intent = None
 last_ticker = None
 
 
-# 🔍 Check stock query
+# 🔍 Check if stock-related
 def is_stock_query(query):
     res = client.chat.completions.create(
-        model="openai/gpt-oss-120b",  # fast + good enough
+        model="llama-3.1-8b-instant",  # fast + good enough
         messages=[
-            {"role": "system", "content": "Answer YES or NO. Is this about stocks?"},
+            {"role": "system", "content": "Answer YES or NO. Is this about stocks, finance or investing?"},
             {"role": "user", "content": query}
         ]
     )
     return "yes" in res.choices[0].message.content.lower()
 
 
-# 🔍 Detect ticker
+# 🔍 Dynamic ticker detection (NO HARDCODING)
 def detect_ticker(query):
     res = client.chat.completions.create(
-        model="openai/gpt-oss-120b",  # fast + good enough
+        model="llama-3.1-8b-instant",  # fast + good enough
         messages=[
             {
                 "role": "system",
-                "content": "Extract stock ticker or return NONE"
+                "content": """
+Extract stock ticker.
+
+Rules:
+- Return ONLY ticker (e.g., AAPL, TSLA)
+- If brand → map to company (Redmi → Xiaomi)
+- If not public → return NONE
+"""
             },
             {"role": "user", "content": query}
         ]
     )
+
     return res.choices[0].message.content.strip()
 
 
-# 🔍 Validate ticker
-def validate_ticker(ticker):
-    try:
-        return yf.Ticker(ticker).info.get("regularMarketPrice") is not None
-    except:
-        return False
-
-
-# 📄 DOWNLOAD REPORT
+# 📄 Download report
 def download_report(ticker):
     try:
         print(f"\n📄 Downloading report for {ticker}...")
@@ -76,35 +75,11 @@ def download_report(ticker):
         print(f"❌ Report download failed: {e}")
 
 
-# 🌐 API CALL
-def call_api(query):
-    global last_ticker
-
-    ticker = detect_ticker(query)
-
-    if ticker == "NONE":
-        return {"type": "non_stock"}
-
-    if not validate_ticker(ticker):
-        return {"type": "invalid_ticker"}
-
-    last_ticker = ticker
-
-    print(f"\n📊 Detected Ticker: {ticker}")
-
-    res = requests.get(
-        f"{BASE_URL}/analyze",
-        params={"ticker": ticker, "query": query}
-    )
-
-    return res.json()
-
-
-# 🤖 CHAT LOOP
+# 🤖 MAIN CHAT
 def chat():
     global last_intent, last_ticker
 
-    print("🤖 AI Financial Assistant")
+    print("🤖 AI Financial Assistant (Dynamic + MCP)")
     print("Type 'exit' to stop\n")
 
     while True:
@@ -116,55 +91,84 @@ def chat():
         # 🔥 Handle follow-up
         if user_input.lower() in ["yes", "ok", "sure"]:
             if last_ticker:
-                user_input = f"details about {last_ticker}"
+                user_input = f"Give full details about {last_ticker}"
 
-        # 🔥 REPORT DOWNLOAD TRIGGER
-        if "report" in user_input.lower() or "pdf" in user_input.lower():
-            if last_ticker:
-                download_report(last_ticker)
-            else:
-                print("⚠️ No stock selected yet.")
+        # 🔥 Detect ticker dynamically
+        ticker = detect_ticker(user_input)
+
+        if ticker != "NONE":
+            last_ticker = ticker
+        else:
+            ticker = last_ticker
+
+        # ❌ No ticker found
+        if not ticker:
+            print("⚠️ Please specify a stock.")
             continue
 
-        # 🔥 ROUTING
-        if is_stock_query(user_input) or last_intent == "stock":
+        print(f"📊 Using ticker: {ticker}")
+
+        # 🔥 Report trigger
+        if "report" in user_input.lower() or "pdf" in user_input.lower():
+            download_report(ticker)
+            continue
+
+        # 🔥 Check intent
+        if is_stock_query(user_input):
             last_intent = "stock"
 
-            data = call_api(user_input)
+            # 🔥 CALL YOUR AGENT SYSTEM (IMPORTANT)
+            context = run_dynamic_agent(user_input, ticker)
 
-            if data.get("type") == "non_stock":
-                prompt = "Explain that this is not a public stock."
+            print("🧠 CONTEXT:", context)
 
-            elif data.get("type") == "invalid_ticker":
-                prompt = "Ask user to clarify the stock."
+            # 🔥 FINAL RESPONSE (STRICT MODE)
+            response = client.chat.completions.create(
+                model="llama-3.1-8b-instant",  # fast + good enough
+                messages=[
+                    {
+                        "role": "system",
+                        "content": """
+You are a financial assistant.
 
-            else:
-                prompt = f"""
+STRICT RULES:
+- ONLY use the provided data
+- DO NOT add extra assumptions
+- DO NOT invent KPI, risk, recommendation
+- If missing, say "data not available"
+"""
+                    },
+                    {
+                        "role": "user",
+                        "content": f"""
 User Query: {user_input}
 
-Data:
-{data}
+Available Data:
+{context}
 
-Explain clearly and give recommendation.
+Answer strictly based on this data.
 """
+                    }
+                ]
+            )
+
+            ai_reply = response.choices[0].message.content
 
         else:
             last_intent = "general"
-            prompt = user_input
 
-        chat_history.append({"role": "user", "content": prompt})
+            response = client.chat.completions.create(
+                model="llama-3.1-8b-instant",  # fast + good enough
+                messages=chat_history + [{"role": "user", "content": user_input}]
+            )
 
-        response = client.chat.completions.create(
-            model="openai/gpt-oss-120b",  # fast + good enough
-            messages=chat_history
-        )
+            ai_reply = response.choices[0].message.content
 
-        ai_reply = response.choices[0].message.content
-
+        chat_history.append({"role": "user", "content": user_input})
         chat_history.append({"role": "assistant", "content": ai_reply})
 
         print("\nAI:", ai_reply)
-        print("\n" + "-"*50 + "\n")
+        print("\n" + "-" * 50 + "\n")
 
 
 if __name__ == "__main__":

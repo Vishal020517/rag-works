@@ -53,7 +53,7 @@ def analyze_sentiment(titles:str):
         """
 
         response = client.chat.completions.create(
-            model="openai/gpt-oss-120b",  # fast + good enough
+            model="llama-3.1-8b-instant",  # fast + good enough
             messages=[
                 {"role": "system", "content": "You are a financial sentiment analysis assistant."},
                 {"role": "user", "content": prompt}

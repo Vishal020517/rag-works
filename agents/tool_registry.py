@@ -1,6 +1,6 @@
 import requests
 
-MCP_BASE = "https://rag-works.onrender.com"
+MCP_BASE = "http://localhost:8000"
 
 
 # 🔹 STOCK TOOL
