@@ -11,34 +11,30 @@ def planner_agent(user_query: str):
         print("🧠 Planner Agent analyzing query...")
 
         prompt = f"""
-        You are an AI planner for a financial system.
+            You are an AI planner for a financial system.
 
-        Available steps:
-        - stock
-        - news
-        - kpi
-        - risk
-        - recommendation
-        - report
-        - chart
+            Decide steps BASED ON USER INTENT.
 
-        Return a JSON array of steps in order.
+            Rules:
 
-        Example:
-        [
-        {{"step": "stock"}},
-        {{"step": "news"}},
-        {{"step": "kpi"}},
-        {{"step": "risk"}},
-        {{"step": "recommendation"}},
-        {{"step": "report"}},
-        {{"step": "chart"}}
-        ]
+            If user asks:
+            - "stock price / details" → ["stock"]
+            - "news / latest news" → ["news"]
+            - "kpi / metrics" → ["stock", "kpi"]
+            - "risk" → ["stock", "kpi", "risk"]
+            - "should I buy / recommendation" → ["stock", "kpi", "risk", "recommendation"]
+            - "full analysis" → ["stock", "news", "kpi", "risk", "recommendation"]
+            - "report / pdf" → ["stock", "kpi", "risk", "recommendation", "report"]
+            - "chart" → ["chart"]
 
-        Query: "{user_query}"
+            Return ONLY JSON like:
+            [
+            {{"step": "stock"}},
+            {{"step": "news"}}
+            ]
 
-        ONLY return JSON.
-        """
+            Query: "{user_query}"
+            """
 
         response = client.chat.completions.create(
             model="openai/gpt-oss-120b",  # fast + good enough
