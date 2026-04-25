@@ -8,6 +8,7 @@ from tools.recommendation import generate_recommendation
 from tools.report import generate_report
 from fastapi.responses import FileResponse
 from agents.orchestrator import run_dynamic_agent
+import os
 
 app=FastAPI()
 
@@ -39,14 +40,20 @@ def recommendation(data:dict):
     risk=data.get("risk")
     return generate_recommendation(valuation,risk)
 
-@app.post("/report")
-def report(data:dict):
-    result=generate_report(data)
+@app.get("/report")
+def get_report(ticker: str):
+    file_path = f"{ticker}_report.pdf"
 
-    if "file" in result:
-        return FileResponse(result["file"], media_type="application/pdf", filename="report.pdf")
+    # If report not exists → generate it
+    if not os.path.exists(file_path):
+        from tools.report import generate_report
+        generate_report(ticker)
 
-    return result
+    return FileResponse(
+        path=file_path,
+        media_type="application/pdf",
+        filename=f"{ticker}_report.pdf"
+    )
 
 @app.get("/analyze")
 def analyze(ticker: str, query: str):
