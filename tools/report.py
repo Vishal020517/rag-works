@@ -3,15 +3,26 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 import os
 from dotenv import load_dotenv
+import requests
 
 load_dotenv()
 
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
+BASE_URL = "https://rag-works.onrender.com"
 
-def generate_report(data):
+
+def generate_report(ticker):
     try:
-        # Step 1: Generate report text using LLM
+        # 🔥 Step 1: Get data from your API
+        response = requests.get(
+            f"{BASE_URL}/analyze",
+            params={"ticker": ticker, "query": "Generate report"}
+        )
+
+        data = response.json()
+
+        # 🔥 Step 2: Generate report text
         prompt = f"""
         Generate a detailed financial report.
 
@@ -24,23 +35,20 @@ def generate_report(data):
         - Risk Analysis
         - Recommendation
         - Conclusion
-
-        Keep it professional and clear.
         """
 
         response = client.chat.completions.create(
-            model="openai/gpt-oss-120b",  # fast + good enough
+            model="openai/gpt-oss-120b",  # ✅ correct model
             messages=[
                 {"role": "system", "content": "You are a financial analyst."},
                 {"role": "user", "content": prompt}
-            ],
-            temperature=0
+            ]
         )
 
         report_text = response.choices[0].message.content.strip()
 
-        # Step 2: Create PDF
-        file_path = "financial_report.pdf"
+        # 🔥 Step 3: Create PDF (dynamic name)
+        file_path = f"{ticker}_report.pdf"
 
         doc = SimpleDocTemplate(file_path)
         styles = getSampleStyleSheet()
@@ -53,14 +61,8 @@ def generate_report(data):
 
         doc.build(elements)
 
-        # Step 3: Return file info
-        return {
-            "message": "Report generated successfully",
-            "file": file_path
-        }
+        return file_path  # ✅ return only path
 
     except Exception as e:
-        return {
-            "error": "Report generation failed",
-            "details": str(e)
-        }
+        print("REPORT ERROR:", e)
+        return None

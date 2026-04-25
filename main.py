@@ -42,12 +42,10 @@ def recommendation(data:dict):
 
 @app.get("/report")
 def get_report(ticker: str):
-    file_path = f"{ticker}_report.pdf"
+    file_path = generate_report(ticker)
 
-    # If report not exists → generate it
-    if not os.path.exists(file_path):
-        from tools.report import generate_report
-        generate_report(ticker)
+    if not file_path or not os.path.exists(file_path):
+        return {"error": "Report generation failed"}
 
     return FileResponse(
         path=file_path,
