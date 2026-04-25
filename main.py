@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from mcp_server.agents.orchestrator import run_dynamic_agent
+from agents.orchestrator import run_dynamic_agent
 from tools.stock import get_stock_data
 from tools.news import get_company_news
 from tools.kpi import calculate_kpis
