@@ -1,6 +1,6 @@
 import requests
 
-MCP_BASE = "http://127.0.0.1:8000"
+MCP_BASE = "https://rag-works.onrender.com"
 
 def stock_tool(ctx):
     ticker = ctx["ticker"]
