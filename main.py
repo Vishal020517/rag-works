@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from mcp_server.agents.orchestrator import run_dynamic_agent
 from tools.stock import get_stock_data
 from tools.news import get_company_news
 from tools.kpi import calculate_kpis
@@ -6,7 +7,7 @@ from tools.risk import calculate_risk
 from tools.recommendation import generate_recommendation
 from tools.report import generate_report
 from fastapi.responses import FileResponse
-
+from agents.orchestrator import run_dynamic_agent
 
 app=FastAPI()
 
@@ -46,6 +47,10 @@ def report(data:dict):
         return FileResponse(result["file"], media_type="application/pdf", filename="report.pdf")
 
     return result
+
+@app.get("/analyze")
+def analyze(ticker: str, query: str):
+    return run_dynamic_agent(query, ticker)
 
 
 
