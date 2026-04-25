@@ -3,6 +3,7 @@ from agents.orchestrator import run_dynamic_agent
 from dotenv import load_dotenv
 import os
 import requests
+import json
 
 load_dotenv()
 
@@ -17,43 +18,60 @@ chat_history = [
 last_intent = None
 last_ticker = None
 
-
-# 🔍 Check if stock-related
 def is_stock_query(query):
     res = client.chat.completions.create(
-        model="llama-3.1-8b-instant",  # fast + good enough
+        model="llama-3.1-8b-instant", 
         messages=[
-            {"role": "system", "content": "Answer YES or NO. Is this about stocks, finance or investing?"},
-            {"role": "user", "content": query}
+            {"role": "system", "content": "You are a classifier. Respond with ONLY 'YES' or 'NO'. No other text."},
+            {"role": "user", "content": f"Is this about stocks, finance, investing, or company financials? Query: {query}"}
         ]
     )
-    return "yes" in res.choices[0].message.content.lower()
+    answer = res.choices[0].message.content.strip().upper()
 
+    if "YES" in answer:
+        print(f"DEBUG: Is stock query? YES for '{query}'")  
+        return True
+    else:
+        print(f"DEBUG: Is stock query? NO for '{query}'")  
+        return False
 
-# 🔍 Dynamic ticker detection (NO HARDCODING)
 def detect_ticker(query):
     res = client.chat.completions.create(
-        model="llama-3.1-8b-instant",  # fast + good enough
+        model="llama-3.1-8b-instant", 
         messages=[
             {
                 "role": "system",
-                "content": """
-Extract stock ticker.
-
-Rules:
-- Return ONLY ticker (e.g., AAPL, TSLA)
-- If brand → map to company (Redmi → Xiaomi)
-- If not public → return NONE
-"""
+                "content": "Extract ONLY the stock ticker symbol. Output format: SINGLE TICKER OR NONE. No other text."
             },
-            {"role": "user", "content": query}
+            {
+                "role": "user",
+                "content": f"""Extract ticker from: {query}
+
+Mappings:
+- Apple/apple → AAPL
+- Tesla/tesla → TSLA  
+- Google/google → GOOGL
+- Microsoft/microsoft → MSFT
+- Amazon/amazon → AMZN
+- Meta/meta → META
+- Nvidia/nvidia → NVDA
+
+Return ONLY: TICKER or NONE"""
+            }
         ]
     )
 
-    return res.choices[0].message.content.strip()
+    response = res.choices[0].message.content.strip().upper()
+    # Extract only valid ticker symbols (1-5 uppercase letters)
+    import re
+    match = re.search(r'\b([A-Z]{1,5})\b', response)
+    ticker = match.group(1) if match else "NONE"
+    
+    print(f"DEBUG: Detected ticker: '{ticker}' for '{query}'")  # Debug print
+    return ticker
 
 
-# 📄 Download report
+
 def download_report(ticker):
     try:
         print(f"\n📄 Downloading report for {ticker}...")
@@ -69,13 +87,13 @@ def download_report(ticker):
         with open(file_name, "wb") as f:
             f.write(response.content)
 
-        print(f"✅ Report saved as {file_name}")
+        print(f"Report saved as {file_name}")
 
     except Exception as e:
-        print(f"❌ Report download failed: {e}")
+        print(f"Report download failed: {e}")
 
 
-# 🤖 MAIN CHAT
+
 def chat():
     global last_intent, last_ticker
 
@@ -88,54 +106,84 @@ def chat():
         if user_input.lower() == "exit":
             break
 
-        # 🔥 Handle follow-up
+      
         if user_input.lower() in ["yes", "ok", "sure"]:
             if last_ticker:
                 user_input = f"Give full details about {last_ticker}"
 
-        # 🔥 Detect ticker dynamically
-        ticker = detect_ticker(user_input)
+    
+        is_stock = is_stock_query(user_input)
+        
+        if is_stock:
+            ticker = detect_ticker(user_input)
 
-        if ticker != "NONE":
-            last_ticker = ticker
-        else:
-            ticker = last_ticker
+            if ticker != "NONE":
+                last_ticker = ticker
+            else:
+                ticker = last_ticker
 
-        # ❌ No ticker found
-        if not ticker:
-            print("⚠️ Please specify a stock.")
-            continue
+    
+            if not ticker:
+                print("⚠️ Please specify a stock.")
+                continue
 
-        print(f"📊 Using ticker: {ticker}")
+            print(f"📊 Using ticker: {ticker}")
 
-        # 🔥 Report trigger
-        if "report" in user_input.lower() or "pdf" in user_input.lower():
-            download_report(ticker)
-            continue
+            
+            if "report" in user_input.lower() or "pdf" in user_input.lower():
+                if ticker and ticker != "NONE":
+                    download_report(ticker)
+                else:
+                    print("Please specify a stock ticker for report generation.")
+                continue
 
-        # 🔥 Check intent
-        if is_stock_query(user_input):
             last_intent = "stock"
+            print("DEBUG: Calling agent for stock query")
 
-            # 🔥 CALL YOUR AGENT SYSTEM (IMPORTANT)
+             
             context = run_dynamic_agent(user_input, ticker)
 
-            print("🧠 CONTEXT:", context)
+            print("CONTEXT:", context)
 
-            # 🔥 FINAL RESPONSE (STRICT MODE)
+            
             response = client.chat.completions.create(
-                model="llama-3.1-8b-instant",  # fast + good enough
+                model="llama-3.1-8b-instant",  
                 messages=[
                     {
                         "role": "system",
                         "content": """
-You are a financial assistant.
+You are a professional financial analyst. Your job is to present data from the context in a clear, 
+beautiful, and understandable way while maintaining 100% accuracy.
 
-STRICT RULES:
-- ONLY use the provided data
-- DO NOT add extra assumptions
-- DO NOT invent KPI, risk, recommendation
-- If missing, say "data not available"
+RULES:
+1. Base ALL insights ONLY on the provided data - never invent or assume
+2. Use professional formatting: headers, bullet points, bold text for emphasis
+3. Explain metrics in simple terms so non-technical users understand
+4. Provide context for numbers (e.g., explain what PE ratio value means)
+5. Organize information logically with clear sections
+6. Use analogies or relatable examples to explain concepts
+7. Highlight key findings that matter for decision-making
+8. If data contradicts a claim, report the data as-is (valuation='fair' means report it as fair, don't reinterpret)
+
+PRESENTATION GUIDELINES:
+- Use ** for headers and important terms
+- Group related information together
+- Provide summary at the top, details below
+- Make numbers easy to understand (add context like "industry average" if in data)
+- Use clear language, avoid jargon where possible
+- Add a brief interpretation line for each metric based on the provided values
+
+EXAMPLE FORMAT:
+**Stock Price & Valuation**
+- Current Price: $XXX.XX
+- This represents the current market value of the stock
+- PE Ratio: X.XX [if data says fair/overvalued/undervalued, use that exact word]
+- Interpretation: [Explain what this PE ratio means based on the valuation field in data]
+
+**Company Profile**
+- [Describe company size, market cap implications based on provided data]
+
+Always source your insights directly from the available data context provided.
 """
                     },
                     {
@@ -144,9 +192,9 @@ STRICT RULES:
 User Query: {user_input}
 
 Available Data:
-{context}
+{json.dumps(context, indent=2)}
 
-Answer strictly based on this data.
+Provide a response based ONLY on the above data.
 """
                     }
                 ]
@@ -156,9 +204,10 @@ Answer strictly based on this data.
 
         else:
             last_intent = "general"
+            print("DEBUG: Using general Groq response") 
 
             response = client.chat.completions.create(
-                model="llama-3.1-8b-instant",  # fast + good enough
+                model="llama-3.1-8b-instant", 
                 messages=chat_history + [{"role": "user", "content": user_input}]
             )
 

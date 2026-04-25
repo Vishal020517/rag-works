@@ -18,6 +18,7 @@ def home():
 
 @app.get("/stock/{ticker}")
 def stock(ticker:str):
+    print(f"🔥 STOCK ENDPOINT HIT: {ticker}")
     return get_stock_data(ticker)
 
 @app.get("/news/{company}")
